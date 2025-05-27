@@ -1,0 +1,1451 @@
+---
+#   _____                           _
+#  / ____|                         | |
+# | |  __  ___ _ __   ___ _ __ __ _| |
+# | | |_ |/ _ \ '_ \ / _ \ '__/ _` | |
+# | |__| |  __/ | | |  __/ | | (_| | |
+#  \_____|\___|_| |_|\___|_|  \__,_|_|
+
+#  _____        __                           _   _
+# |_   _|      / _|                         | | (_)
+#   | |  _ __ | |_ ___  _ __ _ __ ___   __ _| |_ _  ___  _ __
+#   | | | '_ \|  _/ _ \| '__| '_ ` _ \ / _` | __| |/ _ \| '_ \
+#  _| |_| | | | || (_) | |  | | | | | | (_| | |_| | (_) | | | |
+# |_____|_| |_|_| \___/|_|  |_| |_| |_|\__,_|\__|_|\___/|_| |_|
+
+model_name: Mycoplasma_hyopneumoniae
+
+model_info:
+  desc: 'The present study developed a discrete time, stochastic, individual-based model,
+  using the epidemiological mechanistic modelling framework EMULSION. The model we developed simulates
+  the infection dynamics of M. hyopneumoniae, the development of symptoms, i.e. non-productive dry coughing
+  and lung lesions, and the impact of the disease on individual pig production performance, i.e. growth and feed intake.
+  The model is able to simulate infection dynamics on both the compartment level and the pen level,
+  giving the ability to separate within-pen and between-pen transmission (Sicard et al., 2023).'
+  license: 'none'
+  emulsion_version: '1.3beta'
+  abstract: ''
+  others:
+    'How to go to the proper dir': 'cd C:\Users\5704995\OneDrive - Universiteit Utrecht\EMULSION\DECIDE_WORKSHOP\DECIDE_WORKSHOP'
+    'How to run the model in anaconda': 'emulsion run --plot Mycoplasma_hyopneumoniae.yaml -r 1'
+
+
+#  _______ _
+# |__   __(_)
+#    | |   _ _ __ ___   ___
+#    | |  | | '_ ` _ \ / _ \
+#    | |  | | | | | | |  __/
+#    |_|  |_|_| |_| |_|\___|
+
+time_info:
+  time_unit: days
+  delta_t: 1
+  total_duration: '18*7'
+  stop_condition: 'total_population <= 0.1*room_capacity'
+
+
+#  _                    _
+# | |                  | |
+# | |     _____   _____| |___
+# | |    / _ \ \ / / _ \ / __|
+# | |___|  __/\ V /  __/ \__ \
+# |______\___| \_/ \___|_|___/
+
+levels:
+  population:
+    desc: 'population'
+    contains:
+      - animals
+    aggregation_type: hybrid
+    aggregate_vars:
+      - name: sumweight
+        collect: weight
+        operator: 'sum'
+      - name: varweight
+        collect: weight
+        operator: 'var'
+      - name: sumfeedintake
+        collect: feed_intake
+        operator: 'sum'
+      - name: average_Days_diseased
+        collect: Days_diseased
+        operator: 'mean'
+      - name: episodes
+        collect: nb_episodes
+        operator: 'sum'
+      - name: treatment
+        collect: nb_AntibioticTreatment
+        operator: 'sum'
+      - name: totaltreatedweight
+        collect: treatedweight
+        operator: 'sum'
+
+  animals:
+    desc: 'individual pigs'
+    default_prototype: default_pig
+
+
+#   _____
+#  / ____|
+# | |  __ _ __ ___  _   _ _ __  ___
+# | | |_ | '__/ _ \| | | | '_ \/ __|
+# | |__| | | | (_) | |_| | |_) \__ \
+#  \_____|_|  \___/ \__,_| .__/|___/
+#                        | |
+#                        |_|
+
+grouping:
+  population:
+    coughing: [Clinical_state]
+    #, pen]
+    pneumonia: [Pneumonia]
+    #, batch]
+    production: [Pneumonia, Performance, health_state, room, pen] # <-- the root group is linked to the Performance state machine, which triggers the organization
+    # , health_state, room, pen]
+    subp: [health_state, room, pen, Performance] # <-- the subgroup to have the specific group of variables, with the addition of the Performance SM to differentiate it from the healthpen group
+    #, batch]
+    healthpen:  [health_state, room, pen]
+    totalhealth: [health_state, Vaccine, Clinical_state, Pneumonia, ABtreatment]
+    #, batch]
+  #     - Mortality
+#  _____
+# |  __ \
+# | |__) | __ ___   ___ ___  ___ ___  ___  ___
+# |  ___/ '__/ _ \ / __/ _ \/ __/ __|/ _ \/ __|
+# | |   | | | (_) | (_|  __/\__ \__ \  __/\__ \
+# |_|   |_|  \___/ \___\___||___/___/\___||___/
+
+processes:
+  animals:
+    - Vaccine: totalhealth
+    - ABtreatment: totalhealth
+    - health_state: healthpen
+    - Clinical_state: coughing
+    - Pneumonia: pneumonia
+    - Performance: production
+#    - Mortality: health
+
+
+#   _____ _        _         __  __            _     _
+#  / ____| |      | |       |  \/  |          | |   (_)
+# | (___ | |_ __ _| |_ ___  | \  / | __ _  ___| |__  _ _ __   ___  ___
+#  \___ \| __/ _` | __/ _ \ | |\/| |/ _` |/ __| '_ \| | '_ \ / _ \/ __|
+#  ____) | || (_| | ||  __/ | |  | | (_| | (__| | | | | | | |  __/\__ \
+# |_____/ \__\__,_|\__\___| |_|  |_|\__,_|\___|_| |_|_|_| |_|\___||___/
+
+state_machines:
+
+  # -----------------
+  # ANTIBIOTIC TREATMENT
+  # -----------------
+  ABtreatment:
+    desc: 'treated'
+    states:
+      - Untreated:
+          name: ''
+          desc: 'untreated animals'
+          fillcolor: 'black'
+          line_style: 'solid'
+      - Treated:
+          name: ''
+          desc: 'treated animals'
+          fillcolor: 'red'
+          line_style: 'solid'
+          on_enter:
+            - set_var: nb_AntibioticTreatment
+              value: 1
+            - set_var: 'treatedweight'
+              value: weight
+    transitions:
+      - from: Untreated
+        to: Treated
+        proba: 1
+        desc: ''
+        cond: AntibioticTreatment
+
+
+  # -----------------
+  # VACCINATION
+  # -----------------
+  Vaccine:
+    desc: 'vaccination status'
+    states:
+      - V:
+          name: ''
+          desc: 'vaccinated animals'
+          fillcolor: 'lightgray'
+          line_style: 'solid'
+      - NV:
+          name: ''
+          desc: 'non-vaccinated animals'
+          fillcolor: 'lightgray'
+          line_style: 'solid'
+
+  # -----------------
+  # HEALTH STATES
+  # -----------------
+  health_state:
+    desc: ''
+    states:
+      - S:
+          name: ''
+          desc: 'Susceptible individuals prior exposure'
+          fillcolor: '#1FA6C1'
+          line_style: 'solid'
+      #- Se:
+      #    name: ''
+      #    desc: 'Susceptible individuals post first unsuccessful exposure'
+      #    fillcolor: '#1FA6C1'
+      #    line_style: 'solid'
+      - E:
+          name: ''
+          desc: 'Exposed or pre-infectious '
+          duration: 'dur_E'
+          fillcolor: '#3FDED4'
+          line_style: 'solid'
+          on_stay:
+            - set_var: DPI
+              value: 'DPI + 1'
+      - Ia:
+          name: ''
+          desc: 'Acutely diseased and infectious'
+          fillcolor: '#DC667F'
+          line_style: 'solid'
+          on_enter:
+            - set_var: nb_episodes
+              value: 1
+          on_stay:
+            - set_var: DPI
+              value: 'DPI + 1'
+            - set_var: Days_diseased
+              #as observed in the fattening
+              value: 'Days_diseased + 1'
+      - Ic:
+          name: ''
+          desc: 'Chronically diseased and infectious '
+          duration: 'dur_Ic'
+          fillcolor: '#F7D1CF'
+          line_style: 'solid'
+          on_stay:
+            - set_var: DPI
+              value: 'DPI + 1'
+            - set_var: Days_diseased
+              value: 'Days_diseased + 1'
+      - RI:
+          name: ''
+          desc: 'Recovered'
+          fillcolor: '#A0C530'
+          line_style: 'solid'
+
+    transitions:
+      - from: S
+        to: E
+        rate: 'force_of_infection'
+        desc: 'rate that S become E'
+      #- from: E
+      #  to: Se
+      #  proba: 'p_recover'
+      #  desc: 'animals that recover without being infectious'
+      #- from: Se
+      #  to: E
+      #  rate: 'force_of_infection'
+      #  desc: 'rate that S become E'
+      - from: E
+        to: Ia
+        proba: '1' #'1 - p_recover'
+        desc: 'animals that become infectious'
+      - from: Ia
+        to: Ic
+        proba: '1'
+        desc: 'animals that become chronically infected'
+        cond: 'AND(NOT(is_C), GreaterThan(DPI,stop_signs))'
+      - from: Ic
+        to: RI
+        proba: '1'
+        desc: 'animals that recover'
+
+  # -----------------
+  # SYMPTOMS: COUGH
+  # -----------------
+  Clinical_state:
+    desc: 'clinical (diseased) stages in the model'
+    states:
+      - H:
+          name: ''
+          desc: 'animals healthy, unexposed'
+          fillcolor: 'grey'
+      - SC:
+          name: ''
+          desc: 'subclinical animals'
+          fillcolor: 'grey'
+          line_style: 'solid'
+      - C:
+          name: ''
+          desc: 'animals coughing'
+          fillcolor: 'black'
+          line_style: 'dotted'
+          duration: dur_cough
+          on_stay:
+            - set_var: dayscoughing
+              value: dayscoughing + 1
+      - RC:
+          name: ''
+          desc: 'animals recovered'
+          fillcolor: 'grey'
+          line_style: solid
+
+    transitions:
+      - from: H
+        to: SC
+        proba: 1
+        desc: 'probability of moving from H to A'
+        cond: is_E
+      - from: SC
+        to: C
+        proba: 'p_cough'
+        desc: 'probability of coughing'
+        cond: AND(AND(GreaterThan(DPI, 6), LessThan(DPI, 31)), is_L)
+      - from: C
+        to: RC
+        proba: '1'
+        desc: 'Animals recover after duration of the cough'
+
+
+  # ----------------
+  # SYMPTOMS: PNEUMONIA/GROSS LESIONS
+  # -----------------
+  Pneumonia:
+    desc: ''
+    states:
+      - NL:
+          name: ''
+          desc: 'animals with no lesions'
+          fillcolor: 'grey'
+          line_style: 'solid'
+      - L:
+          name: ''
+          desc: 'animals with pneumonia'
+          duration: 'dur_pneumonia'
+          fillcolor: 'black'
+          line_style: 'dashed'
+    #  - VS:
+    #      name: ''
+    #      desc: 'animals with visible recovering lesions/scars'
+    #      duration: 'random_uniform(7,14)'
+    #      fillcolor: 'black'
+    #      line_style: 'solid'
+      - RL:
+          name: ''
+          desc: 'animals fully recovered from lesions'
+          fillcolor: 'grey'
+          line_style: 'solid'
+
+    transitions:
+      - from: NL
+        to: L
+        proba: 'p_pneumonia'
+        desc: ''
+        cond: AND(GreaterThan(DPI, 6), LessThan(DPI, 15))
+  #    - from: L
+  #      to: VS
+  #      proba: 'p_scars'
+  #      desc: ''
+  #    - from: VS
+  #      to: RL
+  #      proba: '1'
+  #      desc: ''
+      - from: L
+        to: RL
+        proba: '1'
+        desc: ''
+        condition: 'NOT(is_Sold)'
+  # -----------------
+  # PRODUCTION
+  # -----------------
+
+  Performance:
+    desc: 'the Growing phases of the animals'
+    states:
+      - Incoming:
+          name: ''
+          desc: ''
+          duration: 0
+      - Growing:
+          name: ''
+          desc: ''
+          fillcolor: 'red'
+          line_style: 'solid'
+          on_stay:
+            - set_var: Age
+              value: Age+1
+            - set_var: weight
+              value: 'weight + daily_increase * IfThenElse(is_L, disease_impact_ADG, 1)'
+            - set_var: feed_intake
+              value: 'feed_intake + FCR * daily_increase * IfThenElse(is_L, disease_impact_FCR, 1)'
+      - Ready:
+          name: ''
+          desc: ''
+          fillcolor: 'yellow'
+          line_style: 'solid'
+          on_stay:
+            - set_var: Age
+              value: Age+1
+            - set_var: weight
+              value: 'weight + daily_increase * IfThenElse(is_L, disease_impact_ADG, 1)'
+            - set_var: feed_intake
+              value: 'feed_intake + FCR * daily_increase * IfThenElse(is_L, disease_impact_FCR, 1)'
+      - Sold:
+          name: ''
+          desc: ''
+          fillcolor: 'grey'
+          line_style: solid
+
+    transitions:
+      - from: Incoming
+        to: Growing
+        proba: 1
+      - from: Growing
+        to: Ready
+        proba: '1'
+        cond: weight>=120
+      - from: Ready
+        to: Sold
+        proba: '1'
+        cond: OR(Selling14, Selling16, Selling18)
+        #OR(FirstSelling14==TRUE, FirstSelling16==TRUE, SecondSelling==TRUE)
+
+organizations:
+  housing:
+    name: 'farm'
+    desc: '1 farm, 3 stages but only 1 real compartment with 12 pens'
+    execute_process:
+      - allocate
+    spaces:
+      name: 'farm'
+      description: 'stages corresponding to statemachine Performance'
+      allocation:
+        - if: 'is_Incoming'
+          then: waitingroom
+          #to initialize and prepare for multiple compartments/batches
+        - if: 'is_Growing'
+          then: finishingroom
+#        - if: 'is_Sold'
+#          then: soldroom
+          #to keep track of sold animals
+      nodes:
+        waitingroom:
+          reference: waitingroom
+        finishingroom:
+          reference: finishingroom
+ #       soldroom:
+ #         reference: soldroom
+      graph:
+        - 'waitingroom ->(totalIa:1) finishingroom'
+ #       - 'finishingroom ->(totalIa:1) soldroom'
+    state_machines:
+      - Performance
+
+  waitingroom:
+    name: 'waitingroom'
+    desc: 'theoretical'
+    execute_process:
+      - allocate
+    spaces:
+      name: 'room'
+      description: 'one room'
+      informations:
+        totalIa:
+          value: 0
+      allocation:
+        - waitingroom1
+      nodes:
+        waitingroom1:
+          reference: waitingroom1
+
+  waitingroom1:
+    name: 'waitingroom1'
+    desc: 'waitingroom'
+    execute_process:
+      - allocate
+    spaces:
+      name: 'pen'
+      description: 'pens of the waitingroom'
+      allocation:
+        - waitingroom1_pen1
+      nodes:
+        waitingroom1_pen1:
+          informations:
+            totalIa:
+              value: 0
+
+  finishingroom:
+    name: 'finishingroom'
+    desc: 'Organization of 4 pens in the compartment'
+    execute_process:
+      - allocate
+    spaces:
+      name: 'room'
+      description: 'sector in single room'
+      allocation:
+        - finishingroom1
+      nodes:
+        finishingroom1:
+          reference: finishingroom1
+
+  finishingroom1:
+    name: 'finishingroom1'
+    desc: 'finishingroom'
+    processes:
+      depositA_pen1:
+        action: 'set_to(information=totalIa, value=fatt1_pen1_Ia, spaces=[finishingroom1_pen1])'
+ #     depositC_pen1:
+ #       action: 'set_to(information=totalIc, value=total_Ic_finishingroom1_pen1, spaces=[finishingroom1_pen1])'
+      depositA_pen2:
+        action: 'set_to(information=totalIa, value=fatt1_pen2_Ia, spaces=[finishingroom1_pen2])'
+ #     Icpen2:
+ #       action: 'set_to(information=totalIc, value=total_Ic_finishingroom1_pen2, spaces=[finishingroom1_pen2])'
+      depositA_pen3:
+        action: 'set_to(information=totalIa, value=fatt1_pen3_Ia, spaces=[finishingroom1_pen3])'
+ #     Icpen3:
+ #       action: 'set_to(information=totalIa, value=total_Ic_finishingroom1_pen3, spaces=[finishingroom1_pen3])'
+      depositA_pen4:
+        action: 'set_to(information=totalIa, value=fatt1_pen4_Ia, spaces=[finishingroom1_pen4])'
+ #     Icpen4:
+ #       action: 'set_to(information=totalIa, value=total_Ic_finishingroom1_pen4, spaces=[finishingroom1_pen4])'
+      depositA_pen5:
+        action: 'set_to(information=totalIa, value=fatt1_pen5_Ia, spaces=[finishingroom1_pen5])'
+      depositA_pen6:
+        action: 'set_to(information=totalIa, value=fatt1_pen6_Ia, spaces=[finishingroom1_pen6])'
+      depositA_pen7:
+        action: 'set_to(information=totalIa, value=fatt1_pen7_Ia, spaces=[finishingroom1_pen7])'
+      depositA_pen8:
+        action: 'set_to(information=totalIa, value=fatt1_pen8_Ia, spaces=[finishingroom1_pen8])'
+      depositA_pen9:
+        action: 'set_to(information=totalIa, value=fatt1_pen9_Ia, spaces=[finishingroom1_pen9])'
+      depositA_pen10:
+        action: 'set_to(information=totalIa, value=fatt1_pen10_Ia, spaces=[finishingroom1_pen10])'
+      depositA_pen11:
+        action: 'set_to(information=totalIa, value=fatt1_pen11_Ia, spaces=[finishingroom1_pen11])'
+      depositA_pen12:
+        action: 'set_to(information=totalIa, value=fatt1_pen12_Ia, spaces=[finishingroom1_pen12])'
+
+    execute_process:
+      - allocate #animals are distributed over all spaces, randomly
+      - depositA_pen1 #with this process, the information function is renamed to totalIa, the value assigned is not 0 but the number of acutely infectious animals, and it only applies for the spaces in pen 1
+      - depositA_pen2
+      - depositA_pen3
+      - depositA_pen4
+      - depositA_pen5
+      - depositA_pen6
+      - depositA_pen7
+      - depositA_pen8
+      - depositA_pen9
+      - depositA_pen10
+      - depositA_pen11
+      - depositA_pen12
+      - propagate_information
+    spaces:
+      name: 'pen'
+      description: 'compartment is divided in 12 pens First try with 4 pens'
+      allocation:
+        - alternate(spaces=ALL)
+      nodes:
+        finishingroom1_pen1:
+          informations:
+            totalIa:
+              value: 0
+  #          totalIc:
+   #           value: 0
+        finishingroom1_pen2:
+          informations:
+            totalIa:
+              value: 0
+  #          totalIc:
+  #            value: 0
+        finishingroom1_pen3:
+          informations:
+            totalIa:
+              value: 0
+  #          totalIc:
+   #           value: 0
+        finishingroom1_pen4:
+          informations:
+            totalIa:
+              value: 0
+    #        totalIc:
+     #         value: 0
+        finishingroom1_pen5:
+          informations:
+            totalIa:
+              value: 0
+        finishingroom1_pen6:
+          informations:
+            totalIa:
+              value: 0
+        finishingroom1_pen7:
+          informations:
+            totalIa:
+              value: 0
+        finishingroom1_pen8:
+          informations:
+            totalIa:
+              value: 0
+        finishingroom1_pen9:
+          informations:
+            totalIa:
+              value: 0
+        finishingroom1_pen10:
+          informations:
+            totalIa:
+              value: 0
+        finishingroom1_pen11:
+          informations:
+            totalIa:
+              value: 0
+        finishingroom1_pen12:
+          informations:
+            totalIa:
+              value: 0
+
+      graph: #For now only propagation of Ia, not Ic
+        - 'finishingroom1_pen1->(totalIa:propag_inter) finishingroom1_pen2 ->(totalIa:propag_inter) finishingroom1_pen1' #neighbouring pens
+        - 'finishingroom1_pen3->(totalIa:propag_inter) finishingroom1_pen4 ->(totalIa:propag_inter) finishingroom1_pen3' #neighbouring pens
+        - 'finishingroom1_pen5->(totalIa:propag_inter) finishingroom1_pen6 ->(totalIa:propag_inter) finishingroom1_pen5' # neighbouring pens
+        - 'finishingroom1_pen7->(totalIa:propag_inter) finishingroom1_pen8 ->(totalIa:propag_inter) finishingroom1_pen7' # neighbouring pens
+        - 'finishingroom1_pen9->(totalIa:propag_inter) finishingroom1_pen10 ->(totalIa:propag_inter) finishingroom1_pen9' # neighbouring pens
+        - 'finishingroom1_pen11->(totalIa:propag_inter) finishingroom1_pen12 ->(totalIa:propag_inter) finishingroom1_pen11' # neighbouring pens
+        - 'finishingroom1_pen1 ->(totalIa:propag_indirect) finishingroom1_pen3 ->(totalIa:propag_indirect) finishingroom1_pen1'
+        - 'finishingroom1_pen1 ->(totalIa:propag_indirect) finishingroom1_pen4 ->(totalIa:propag_indirect) finishingroom1_pen1'
+        - 'finishingroom1_pen1 ->(totalIa:propag_indirect) finishingroom1_pen5 ->(totalIa:propag_indirect) finishingroom1_pen1'
+        - 'finishingroom1_pen1 ->(totalIa:propag_indirect) finishingroom1_pen6 ->(totalIa:propag_indirect) finishingroom1_pen1'
+        - 'finishingroom1_pen1 ->(totalIa:propag_indirect) finishingroom1_pen7 ->(totalIa:propag_indirect) finishingroom1_pen1'
+        - 'finishingroom1_pen1 ->(totalIa:propag_indirect) finishingroom1_pen8 ->(totalIa:propag_indirect) finishingroom1_pen1'
+        - 'finishingroom1_pen1 ->(totalIa:propag_indirect) finishingroom1_pen9 ->(totalIa:propag_indirect) finishingroom1_pen1'
+        - 'finishingroom1_pen1 ->(totalIa:propag_indirect) finishingroom1_pen10 ->(totalIa:propag_indirect) finishingroom1_pen1'
+        - 'finishingroom1_pen1 ->(totalIa:propag_indirect) finishingroom1_pen11 ->(totalIa:propag_indirect) finishingroom1_pen1'
+        - 'finishingroom1_pen1 ->(totalIa:propag_indirect) finishingroom1_pen12 ->(totalIa:propag_indirect) finishingroom1_pen1'
+        - 'finishingroom1_pen2 ->(totalIa:propag_indirect) finishingroom1_pen3 ->(totalIa:propag_indirect) finishingroom1_pen2'
+        - 'finishingroom1_pen2 ->(totalIa:propag_indirect) finishingroom1_pen4 ->(totalIa:propag_indirect) finishingroom1_pen2'
+        - 'finishingroom1_pen2 ->(totalIa:propag_indirect) finishingroom1_pen5 ->(totalIa:propag_indirect) finishingroom1_pen2'
+        - 'finishingroom1_pen2 ->(totalIa:propag_indirect) finishingroom1_pen6 ->(totalIa:propag_indirect) finishingroom1_pen2'
+        - 'finishingroom1_pen2 ->(totalIa:propag_indirect) finishingroom1_pen7 ->(totalIa:propag_indirect) finishingroom1_pen2'
+        - 'finishingroom1_pen2 ->(totalIa:propag_indirect) finishingroom1_pen8 ->(totalIa:propag_indirect) finishingroom1_pen2'
+        - 'finishingroom1_pen2 ->(totalIa:propag_indirect) finishingroom1_pen9 ->(totalIa:propag_indirect) finishingroom1_pen2'
+        - 'finishingroom1_pen2 ->(totalIa:propag_indirect) finishingroom1_pen10 ->(totalIa:propag_indirect) finishingroom1_pen2'
+        - 'finishingroom1_pen2 ->(totalIa:propag_indirect) finishingroom1_pen11 ->(totalIa:propag_indirect) finishingroom1_pen2'
+        - 'finishingroom1_pen2 ->(totalIa:propag_indirect) finishingroom1_pen12 ->(totalIa:propag_indirect) finishingroom1_pen2'
+        - 'finishingroom1_pen3 ->(totalIa:propag_indirect) finishingroom1_pen5 ->(totalIa:propag_indirect) finishingroom1_pen3' # indirect propagation
+        - 'finishingroom1_pen3 ->(totalIa:propag_indirect) finishingroom1_pen6 ->(totalIa:propag_indirect) finishingroom1_pen3' # indirect propagation
+        - 'finishingroom1_pen3 ->(totalIa:propag_indirect) finishingroom1_pen7 ->(totalIa:propag_indirect) finishingroom1_pen3' # indirect propagation
+        - 'finishingroom1_pen3 ->(totalIa:propag_indirect) finishingroom1_pen8 ->(totalIa:propag_indirect) finishingroom1_pen3' # indirect propagation
+        - 'finishingroom1_pen3 ->(totalIa:propag_indirect) finishingroom1_pen9 ->(totalIa:propag_indirect) finishingroom1_pen3' # indirect propagation
+        - 'finishingroom1_pen3 ->(totalIa:propag_indirect) finishingroom1_pen10 ->(totalIa:propag_indirect) finishingroom1_pen3' # indirect propagation
+        - 'finishingroom1_pen3 ->(totalIa:propag_indirect) finishingroom1_pen11 ->(totalIa:propag_indirect) finishingroom1_pen3' # indirect propagation
+        - 'finishingroom1_pen3 ->(totalIa:propag_indirect) finishingroom1_pen12 ->(totalIa:propag_indirect) finishingroom1_pen3' # indirect propagation
+        - 'finishingroom1_pen4 ->(totalIa:propag_indirect) finishingroom1_pen5 ->(totalIa:propag_indirect) finishingroom1_pen4' # indirect propagation
+        - 'finishingroom1_pen4 ->(totalIa:propag_indirect) finishingroom1_pen6 ->(totalIa:propag_indirect) finishingroom1_pen4' # indirect propagation
+        - 'finishingroom1_pen4 ->(totalIa:propag_indirect) finishingroom1_pen7 ->(totalIa:propag_indirect) finishingroom1_pen4' # indirect propagation
+        - 'finishingroom1_pen4 ->(totalIa:propag_indirect) finishingroom1_pen8 ->(totalIa:propag_indirect) finishingroom1_pen4' # indirect propagation
+        - 'finishingroom1_pen4 ->(totalIa:propag_indirect) finishingroom1_pen9 ->(totalIa:propag_indirect) finishingroom1_pen4' # indirect propagation
+        - 'finishingroom1_pen4 ->(totalIa:propag_indirect) finishingroom1_pen10 ->(totalIa:propag_indirect) finishingroom1_pen4' # indirect propagation
+        - 'finishingroom1_pen4 ->(totalIa:propag_indirect) finishingroom1_pen11 ->(totalIa:propag_indirect) finishingroom1_pen4' # indirect propagation
+        - 'finishingroom1_pen4 ->(totalIa:propag_indirect) finishingroom1_pen12 ->(totalIa:propag_indirect) finishingroom1_pen4' # indirect propagation
+        - 'finishingroom1_pen5 ->(totalIa:propag_indirect) finishingroom1_pen7 ->(totalIa:propag_indirect) finishingroom1_pen5' # indirect propagation
+        - 'finishingroom1_pen5 ->(totalIa:propag_indirect) finishingroom1_pen8 ->(totalIa:propag_indirect) finishingroom1_pen5' # indirect propagation
+        - 'finishingroom1_pen5 ->(totalIa:propag_indirect) finishingroom1_pen9 ->(totalIa:propag_indirect) finishingroom1_pen5' # indirect propagation
+        - 'finishingroom1_pen5 ->(totalIa:propag_indirect) finishingroom1_pen10 ->(totalIa:propag_indirect) finishingroom1_pen5' # indirect propagation
+        - 'finishingroom1_pen5 ->(totalIa:propag_indirect) finishingroom1_pen11 ->(totalIa:propag_indirect) finishingroom1_pen5' # indirect propagation
+        - 'finishingroom1_pen5 ->(totalIa:propag_indirect) finishingroom1_pen12 ->(totalIa:propag_indirect) finishingroom1_pen5' # indirect propagation
+        - 'finishingroom1_pen6 ->(totalIa:propag_indirect) finishingroom1_pen7 ->(totalIa:propag_indirect) finishingroom1_pen6' # indirect propagation
+        - 'finishingroom1_pen6 ->(totalIa:propag_indirect) finishingroom1_pen8 ->(totalIa:propag_indirect) finishingroom1_pen6' # indirect propagation
+        - 'finishingroom1_pen6 ->(totalIa:propag_indirect) finishingroom1_pen9 ->(totalIa:propag_indirect) finishingroom1_pen6' # indirect propagation
+        - 'finishingroom1_pen6 ->(totalIa:propag_indirect) finishingroom1_pen10 ->(totalIa:propag_indirect) finishingroom1_pen6' # indirect propagation
+        - 'finishingroom1_pen6 ->(totalIa:propag_indirect) finishingroom1_pen11 ->(totalIa:propag_indirect) finishingroom1_pen6' # indirect propagation
+        - 'finishingroom1_pen6 ->(totalIa:propag_indirect) finishingroom1_pen12 ->(totalIa:propag_indirect) finishingroom1_pen6' # indirect propagation
+        - 'finishingroom1_pen7 ->(totalIa:propag_indirect) finishingroom1_pen9 ->(totalIa:propag_indirect) finishingroom1_pen7' # indirect propagation
+        - 'finishingroom1_pen7 ->(totalIa:propag_indirect) finishingroom1_pen10 ->(totalIa:propag_indirect) finishingroom1_pen7' # indirect propagation
+        - 'finishingroom1_pen7 ->(totalIa:propag_indirect) finishingroom1_pen11 ->(totalIa:propag_indirect) finishingroom1_pen7' # indirect propagation
+        - 'finishingroom1_pen7 ->(totalIa:propag_indirect) finishingroom1_pen12 ->(totalIa:propag_indirect) finishingroom1_pen7' # indirect propagation
+        - 'finishingroom1_pen8 ->(totalIa:propag_indirect) finishingroom1_pen9 ->(totalIa:propag_indirect) finishingroom1_pen8' # indirect propagation
+        - 'finishingroom1_pen8 ->(totalIa:propag_indirect) finishingroom1_pen10 ->(totalIa:propag_indirect) finishingroom1_pen8' # indirect propagation
+        - 'finishingroom1_pen8 ->(totalIa:propag_indirect) finishingroom1_pen11 ->(totalIa:propag_indirect) finishingroom1_pen8' # indirect propagation
+        - 'finishingroom1_pen8 ->(totalIa:propag_indirect) finishingroom1_pen12 ->(totalIa:propag_indirect) finishingroom1_pen8' # indirect propagation
+        - 'finishingroom1_pen9 ->(totalIa:propag_indirect) finishingroom1_pen11 ->(totalIa:propag_indirect) finishingroom1_pen9' # indirect propagation
+        - 'finishingroom1_pen9 ->(totalIa:propag_indirect) finishingroom1_pen12 ->(totalIa:propag_indirect) finishingroom1_pen9' # indirect propagation
+        - 'finishingroom1_pen10 ->(totalIa:propag_indirect) finishingroom1_pen11 ->(totalIa:propag_indirect) finishingroom1_pen10' # indirect propagation
+        - 'finishingroom1_pen10 ->(totalIa:propag_indirect) finishingroom1_pen12 ->(totalIa:propag_indirect) finishingroom1_pen10' # indirect propagation
+
+#  soldroom:
+#    name: 'soldroom'
+#    desc: 'room for sold animals'
+#    execute_process:
+#      - allocate
+#    spaces:
+#      name: 'room'
+#      description: 'sector in single room'
+#      allocation:
+ #       - soldroom1
+ #     nodes:
+ #       soldroom1:
+ #         reference: soldroom1
+ # soldroom1:
+ #   name: 'soldroom1'
+ #   desc: 'no pens division of soldroom'
+ #   execute_process:
+ #     - allocate
+ #   spaces:
+ #     name: 'pen'
+ #     description: 'pens of the sold room'
+ #     allocation:
+ #       - soldroom1_pen1
+ #     nodes:
+ #       soldroom1_pen1:
+ #         informations:
+ #           totalIa:
+ #             value: 0
+
+
+#  _____                               _
+# |  __ \                             | |
+# | |__) |_ _ _ __ __ _ _ __ ___   ___| |_ ___ _ __ ___
+# |  ___/ _` | '__/ _` | '_ ` _ \ / _ \ __/ _ \ '__/ __|
+# | |  | (_| | | | (_| | | | | | |  __/ ||  __/ |  \__ \
+# |_|   \__,_|_|  \__,_|_| |_| |_|\___|\__\___|_|  |___/
+
+parameters:
+ ##Organization
+  # the specific variables to calculate the total per pen.
+
+  fatt1_pen1_S:
+    desc: ''
+    value: "total_S_finishingroom1_finishingroom1_pen1_Incoming
+            + total_S_finishingroom1_finishingroom1_pen1_Growing
+            + total_S_finishingroom1_finishingroom1_pen1_Ready"
+  fatt1_pen2_S:
+    desc: ''
+    value: "total_S_finishingroom1_finishingroom1_pen2_Incoming
+            + total_S_finishingroom1_finishingroom1_pen2_Growing
+            + total_S_finishingroom1_finishingroom1_pen2_Ready"
+  fatt1_pen3_S:
+    desc: ''
+    value: "total_S_finishingroom1_finishingroom1_pen3_Incoming
+            + total_S_finishingroom1_finishingroom1_pen3_Growing
+            + total_S_finishingroom1_finishingroom1_pen3_Ready"
+  fatt1_pen4_S:
+    desc: ''
+    value: "total_S_finishingroom1_finishingroom1_pen4_Incoming
+            + total_S_finishingroom1_finishingroom1_pen4_Growing
+            + total_S_finishingroom1_finishingroom1_pen4_Ready"
+  fatt1_pen5_S:
+    desc: ''
+    value: "total_S_finishingroom1_finishingroom1_pen5_Incoming
+            + total_S_finishingroom1_finishingroom1_pen5_Growing
+            + total_S_finishingroom1_finishingroom1_pen5_Ready"
+  fatt1_pen6_S:
+    desc: ''
+    value: "total_S_finishingroom1_finishingroom1_pen6_Incoming
+            + total_S_finishingroom1_finishingroom1_pen6_Growing
+            + total_S_finishingroom1_finishingroom1_pen6_Ready"
+  fatt1_pen7_S:
+    desc: ''
+    value: "total_S_finishingroom1_finishingroom1_pen7_Incoming
+            + total_S_finishingroom1_finishingroom1_pen7_Growing
+            + total_S_finishingroom1_finishingroom1_pen7_Ready"
+  fatt1_pen8_S:
+    desc: ''
+    value: "total_S_finishingroom1_finishingroom1_pen8_Incoming
+            + total_S_finishingroom1_finishingroom1_pen8_Growing
+            + total_S_finishingroom1_finishingroom1_pen8_Ready"
+  fatt1_pen9_S:
+    desc: ''
+    value: "total_S_finishingroom1_finishingroom1_pen9_Incoming
+            + total_S_finishingroom1_finishingroom1_pen9_Growing
+            + total_S_finishingroom1_finishingroom1_pen9_Ready"
+  fatt1_pen10_S:
+    desc: ''
+    value: "total_S_finishingroom1_finishingroom1_pen10_Incoming
+            + total_S_finishingroom1_finishingroom1_pen10_Growing
+            + total_S_finishingroom1_finishingroom1_pen10_Ready"
+  fatt1_pen11_S:
+    desc: ''
+    value: "total_S_finishingroom1_finishingroom1_pen11_Incoming
+            + total_S_finishingroom1_finishingroom1_pen11_Growing
+            + total_S_finishingroom1_finishingroom1_pen11_Ready"
+  fatt1_pen12_S:
+    desc: ''
+    value: "total_S_finishingroom1_finishingroom1_pen12_Incoming
+            + total_S_finishingroom1_finishingroom1_pen12_Growing
+            + total_S_finishingroom1_finishingroom1_pen12_Ready"
+
+  fatt1_pen1_E:
+    desc: ''
+    value: "total_E_finishingroom1_finishingroom1_pen1_Incoming
+            + total_E_finishingroom1_finishingroom1_pen1_Growing
+            + total_E_finishingroom1_finishingroom1_pen1_Ready"
+  fatt1_pen2_E:
+    desc: ''
+    value: "total_E_finishingroom1_finishingroom1_pen2_Incoming
+            + total_E_finishingroom1_finishingroom1_pen2_Growing
+            + total_E_finishingroom1_finishingroom1_pen2_Ready"
+  fatt1_pen3_E:
+    desc: ''
+    value: "total_E_finishingroom1_finishingroom1_pen3_Incoming
+            + total_E_finishingroom1_finishingroom1_pen3_Growing
+            + total_E_finishingroom1_finishingroom1_pen3_Ready"
+  fatt1_pen4_E:
+    desc: ''
+    value: "total_E_finishingroom1_finishingroom1_pen4_Incoming
+            + total_E_finishingroom1_finishingroom1_pen4_Growing
+            + total_E_finishingroom1_finishingroom1_pen4_Ready"
+  fatt1_pen5_E:
+    desc: ''
+    value: "total_E_finishingroom1_finishingroom1_pen5_Incoming
+            + total_E_finishingroom1_finishingroom1_pen5_Growing
+            + total_E_finishingroom1_finishingroom1_pen5_Ready"
+  fatt1_pen6_E:
+    desc: ''
+    value: "total_E_finishingroom1_finishingroom1_pen6_Incoming
+            + total_E_finishingroom1_finishingroom1_pen6_Growing
+            + total_E_finishingroom1_finishingroom1_pen6_Ready"
+  fatt1_pen7_E:
+    desc: ''
+    value: "total_E_finishingroom1_finishingroom1_pen7_Incoming
+            + total_E_finishingroom1_finishingroom1_pen7_Growing
+            + total_E_finishingroom1_finishingroom1_pen7_Ready"
+  fatt1_pen8_E:
+    desc: ''
+    value: "total_E_finishingroom1_finishingroom1_pen8_Incoming
+            + total_E_finishingroom1_finishingroom1_pen8_Growing
+            + total_E_finishingroom1_finishingroom1_pen8_Ready"
+  fatt1_pen9_E:
+    desc: ''
+    value: "total_E_finishingroom1_finishingroom1_pen9_Incoming
+            + total_E_finishingroom1_finishingroom1_pen9_Growing
+            + total_E_finishingroom1_finishingroom1_pen9_Ready"
+  fatt1_pen10_E:
+    desc: ''
+    value: "total_E_finishingroom1_finishingroom1_pen10_Incoming
+            + total_E_finishingroom1_finishingroom1_pen10_Growing
+            + total_E_finishingroom1_finishingroom1_pen10_Ready"
+  fatt1_pen11_E:
+    desc: ''
+    value: "total_E_finishingroom1_finishingroom1_pen11_Incoming
+            + total_E_finishingroom1_finishingroom1_pen11_Growing
+            + total_E_finishingroom1_finishingroom1_pen11_Ready"
+  fatt1_pen12_E:
+    desc: ''
+    value: "total_E_finishingroom1_finishingroom1_pen12_Incoming
+            + total_E_finishingroom1_finishingroom1_pen12_Growing
+            + total_E_finishingroom1_finishingroom1_pen12_Ready"
+
+  fatt1_pen1_Ia:
+    desc: ''
+    value: "total_Ia_finishingroom1_finishingroom1_pen1_Incoming
+            + total_Ia_finishingroom1_finishingroom1_pen1_Growing
+            + total_Ia_finishingroom1_finishingroom1_pen1_Ready"
+  fatt1_pen2_Ia:
+    desc: ''
+    value: "total_Ia_finishingroom1_finishingroom1_pen2_Incoming
+            + total_Ia_finishingroom1_finishingroom1_pen2_Growing
+            + total_Ia_finishingroom1_finishingroom1_pen2_Ready"
+  fatt1_pen3_Ia:
+    desc: ''
+    value: "total_Ia_finishingroom1_finishingroom1_pen3_Incoming
+            + total_Ia_finishingroom1_finishingroom1_pen3_Growing
+            + total_Ia_finishingroom1_finishingroom1_pen3_Ready"
+  fatt1_pen4_Ia:
+    desc: ''
+    value: "total_Ia_finishingroom1_finishingroom1_pen4_Incoming
+            + total_Ia_finishingroom1_finishingroom1_pen4_Growing
+            + total_Ia_finishingroom1_finishingroom1_pen4_Ready"
+  fatt1_pen5_Ia:
+    desc: ''
+    value: "total_Ia_finishingroom1_finishingroom1_pen5_Incoming
+            + total_Ia_finishingroom1_finishingroom1_pen5_Growing
+            + total_Ia_finishingroom1_finishingroom1_pen5_Ready"
+  fatt1_pen6_Ia:
+    desc: ''
+    value: "total_Ia_finishingroom1_finishingroom1_pen6_Incoming
+            + total_Ia_finishingroom1_finishingroom1_pen6_Growing
+            + total_Ia_finishingroom1_finishingroom1_pen6_Ready"
+  fatt1_pen7_Ia:
+    desc: ''
+    value: "total_Ia_finishingroom1_finishingroom1_pen7_Incoming
+            + total_Ia_finishingroom1_finishingroom1_pen7_Growing
+            + total_Ia_finishingroom1_finishingroom1_pen7_Ready"
+  fatt1_pen8_Ia:
+    desc: ''
+    value: "total_Ia_finishingroom1_finishingroom1_pen8_Incoming
+            + total_Ia_finishingroom1_finishingroom1_pen8_Growing
+            + total_Ia_finishingroom1_finishingroom1_pen8_Ready"
+  fatt1_pen9_Ia:
+    desc: ''
+    value: "total_Ia_finishingroom1_finishingroom1_pen9_Incoming
+            + total_Ia_finishingroom1_finishingroom1_pen9_Growing
+            + total_Ia_finishingroom1_finishingroom1_pen9_Ready"
+  fatt1_pen10_Ia:
+    desc: ''
+    value: "total_Ia_finishingroom1_finishingroom1_pen10_Incoming
+            + total_Ia_finishingroom1_finishingroom1_pen10_Growing
+            + total_Ia_finishingroom1_finishingroom1_pen10_Ready"
+  fatt1_pen11_Ia:
+    desc: ''
+    value: "total_Ia_finishingroom1_finishingroom1_pen11_Incoming
+            + total_Ia_finishingroom1_finishingroom1_pen11_Growing
+            + total_Ia_finishingroom1_finishingroom1_pen11_Ready"
+  fatt1_pen12_Ia:
+    desc: ''
+    value: "total_Ia_finishingroom1_finishingroom1_pen12_Incoming
+            + total_Ia_finishingroom1_finishingroom1_pen12_Growing
+            + total_Ia_finishingroom1_finishingroom1_pen12_Ready"
+  fatt1_pen1_Ic:
+    desc: ''
+    value: "total_Ic_finishingroom1_finishingroom1_pen1_Incoming
+              + total_Ic_finishingroom1_finishingroom1_pen1_Growing
+              + total_Ic_finishingroom1_finishingroom1_pen1_Ready"
+  fatt1_pen2_Ic:
+    desc: ''
+    value: "total_Ic_finishingroom1_finishingroom1_pen2_Incoming
+              + total_Ic_finishingroom1_finishingroom1_pen2_Growing
+              + total_Ic_finishingroom1_finishingroom1_pen2_Ready"
+  fatt1_pen3_Ic:
+    desc: ''
+    value: "total_Ic_finishingroom1_finishingroom1_pen3_Incoming
+              + total_Ic_finishingroom1_finishingroom1_pen3_Growing
+              + total_Ic_finishingroom1_finishingroom1_pen3_Ready"
+  fatt1_pen4_Ic:
+    desc: ''
+    value: "total_Ic_finishingroom1_finishingroom1_pen4_Incoming
+              + total_Ic_finishingroom1_finishingroom1_pen4_Growing
+              + total_Ic_finishingroom1_finishingroom1_pen4_Ready"
+  fatt1_pen5_Ic:
+    desc: ''
+    value: "total_Ic_finishingroom1_finishingroom1_pen5_Incoming
+              + total_Ic_finishingroom1_finishingroom1_pen5_Growing
+              + total_Ic_finishingroom1_finishingroom1_pen5_Ready"
+  fatt1_pen6_Ic:
+    desc: ''
+    value: "total_Ic_finishingroom1_finishingroom1_pen6_Incoming
+              + total_Ic_finishingroom1_finishingroom1_pen6_Growing
+              + total_Ic_finishingroom1_finishingroom1_pen6_Ready"
+  fatt1_pen7_Ic:
+    desc: ''
+    value: "total_Ic_finishingroom1_finishingroom1_pen7_Incoming
+              + total_Ic_finishingroom1_finishingroom1_pen7_Growing
+              + total_Ic_finishingroom1_finishingroom1_pen7_Ready"
+  fatt1_pen8_Ic:
+    desc: ''
+    value: "total_Ic_finishingroom1_finishingroom1_pen8_Incoming
+              + total_Ic_finishingroom1_finishingroom1_pen8_Growing
+              + total_Ic_finishingroom1_finishingroom1_pen8_Ready"
+  fatt1_pen9_Ic:
+    desc: ''
+    value: "total_Ic_finishingroom1_finishingroom1_pen9_Incoming
+              + total_Ic_finishingroom1_finishingroom1_pen9_Growing
+              + total_Ic_finishingroom1_finishingroom1_pen9_Ready"
+  fatt1_pen10_Ic:
+    desc: ''
+    value: "total_Ic_finishingroom1_finishingroom1_pen10_Incoming
+              + total_Ic_finishingroom1_finishingroom1_pen10_Growing
+              + total_Ic_finishingroom1_finishingroom1_pen10_Ready"
+  fatt1_pen11_Ic:
+    desc: ''
+    value: "total_Ic_finishingroom1_finishingroom1_pen11_Incoming
+              + total_Ic_finishingroom1_finishingroom1_pen11_Growing
+              + total_Ic_finishingroom1_finishingroom1_pen11_Ready"
+  fatt1_pen12_Ic:
+    desc: ''
+    value: "total_Ic_finishingroom1_finishingroom1_pen12_Incoming
+              + total_Ic_finishingroom1_finishingroom1_pen12_Growing
+              + total_Ic_finishingroom1_finishingroom1_pen12_Ready"
+
+  fatt1_pen1_RI:
+    desc: ''
+    value: "total_RI_finishingroom1_finishingroom1_pen1_Incoming
+              + total_RI_finishingroom1_finishingroom1_pen1_Growing
+              + total_RI_finishingroom1_finishingroom1_pen1_Ready"
+  fatt1_pen2_RI:
+    desc: ''
+    value: "total_RI_finishingroom1_finishingroom1_pen2_Incoming
+              + total_RI_finishingroom1_finishingroom1_pen2_Growing
+              + total_RI_finishingroom1_finishingroom1_pen2_Ready"
+  fatt1_pen3_RI:
+    desc: ''
+    value: "total_RI_finishingroom1_finishingroom1_pen3_Incoming
+              + total_RI_finishingroom1_finishingroom1_pen3_Growing
+              + total_RI_finishingroom1_finishingroom1_pen3_Ready"
+  fatt1_pen4_RI:
+    desc: ''
+    value: "total_RI_finishingroom1_finishingroom1_pen4_Incoming
+              + total_RI_finishingroom1_finishingroom1_pen4_Growing
+              + total_RI_finishingroom1_finishingroom1_pen4_Ready"
+  fatt1_pen5_RI:
+    desc: ''
+    value: "total_RI_finishingroom1_finishingroom1_pen5_Incoming
+              + total_RI_finishingroom1_finishingroom1_pen5_Growing
+              + total_RI_finishingroom1_finishingroom1_pen5_Ready"
+  fatt1_pen6_RI:
+    desc: ''
+    value: "total_RI_finishingroom1_finishingroom1_pen6_Incoming
+              + total_RI_finishingroom1_finishingroom1_pen6_Growing
+              + total_RI_finishingroom1_finishingroom1_pen6_Ready"
+  fatt1_pen7_RI:
+    desc: ''
+    value: "total_RI_finishingroom1_finishingroom1_pen7_Incoming
+              + total_RI_finishingroom1_finishingroom1_pen7_Growing
+              + total_RI_finishingroom1_finishingroom1_pen7_Ready"
+  fatt1_pen8_RI:
+    desc: ''
+    value: "total_RI_finishingroom1_finishingroom1_pen8_Incoming
+              + total_RI_finishingroom1_finishingroom1_pen8_Growing
+              + total_RI_finishingroom1_finishingroom1_pen8_Ready"
+  fatt1_pen9_RI:
+    desc: ''
+    value: "total_RI_finishingroom1_finishingroom1_pen9_Incoming
+              + total_RI_finishingroom1_finishingroom1_pen9_Growing
+              + total_RI_finishingroom1_finishingroom1_pen9_Ready"
+  fatt1_pen10_RI:
+    desc: ''
+    value: "total_RI_finishingroom1_finishingroom1_pen10_Incoming
+              + total_RI_finishingroom1_finishingroom1_pen10_Growing
+              + total_RI_finishingroom1_finishingroom1_pen10_Ready"
+  fatt1_pen11_RI:
+    desc: ''
+    value: "total_RI_finishingroom1_finishingroom1_pen11_Incoming
+              + total_RI_finishingroom1_finishingroom1_pen11_Growing
+              + total_RI_finishingroom1_finishingroom1_pen11_Ready"
+  fatt1_pen12_RI:
+    desc: ''
+    value: "total_RI_finishingroom1_finishingroom1_pen12_Incoming
+              + total_RI_finishingroom1_finishingroom1_pen12_Growing
+              + total_RI_finishingroom1_finishingroom1_pen12_Ready"
+
+
+
+
+  # -----------------
+  # INFECTION
+  # -----------------
+  dur_E:
+    desc: 'duration of the latent period'
+    value: 'random_uniform(3,7)'
+    source: '(Calsamiglia et al., 1999; Pieters et al., 2017; Sponheim et al., 2020; Marois et al., 2007; Poeta Silva et al., 2022)'
+  dur_Ic:
+    desc: 'duration of the acute phase'
+    value: 'random_uniform(64,184)' #random_uniform(85,214)' #'shift_dur_Ic + random_gamma(Ic_shape, (average_dur_Ic - shift_dur_Ic)/Ic_shape)'
+
+  propag_intra:
+    desc: 'rate for spread within pen'
+    value: 1
+  propag_inter:
+    desc: 'factor reducing rate for spread between pens in pen group'
+    value: 0.75
+  propag_indirect:
+    desc: 'factor reducing rate for spread between pens outside pen group'
+    value: 0.5
+  transmission_rateIa:
+    desc: ''
+    value: 'random_uniform(0.104, 0.183)'
+    source: 'Betlach et al., (2020)'
+  transmission_rateIc:
+    desc: ''
+    value: '0.5*transmission_rateIa'
+    source: 'assumption'
+  force_of_infection:
+    desc: 'rate at which susceptible individuals become exposed (infected)'
+    value: 'transmission_rateIa * info_totalIa_my_pen/ total_my_pen' #+ transmission_rateIc * info_totalIc_my_pen/ total_my_pen
+  # (is_NV + is_V * vacc_coeff)
+  p_recover:
+    desc: 'Probability to recover without becoming infectious'
+    value: 0.2 #(is_NV + is_V * increase_recover)* p_recover_NV'
+    source: 'expert opinion in Nathues et al., (2016)'
+
+  p_init_E:
+    desc: ''
+    value: '.5'
+  p_init_Ia:
+    desc: ''
+    value: '.5'
+
+  p_mu:
+    desc: 'probability to die'
+    value: '1 - exp(-mu*delta_t)'
+
+
+  # -----------------
+  # CLINICAL_STATE
+  # -----------------
+  proportion_cough_NV:
+    desc: 'in average 90% of infected pigs develop cough at some point'
+    value: 'random_uniform(0.625,1)'
+    source: 'Sorensen et al., 1997; Lorenzo et al., 2005; Le Carrou, 2006; Roberts et al., 2011'
+  proportion_cough:
+    desc: 'proportion of animals in the acute phase that eventually develop cough'
+    value: 'IfThenElse(is_Treated, proportion_cough_NV, proportion_cough_NV)'
+  average_dur_coughonset:
+    desc: 'duration of cough onset is on average between 7 and 14 days'
+    value: '7'
+  dur_cough: #AB
+    desc: 'duration of coughing in an animal'
+    value: IfThenElse(is_Treated, random_uniform(27,91)*ReductABcough, random_uniform(27,91)) #finetuning, random_normal -> took numbers from table and calc av+stdv. Prev: random_uniform(3,66)
+  p_daily_cough:
+    desc: ''
+    value: '1 - (1 - proportion_cough)**(1/average_dur_coughonset)'
+  p_cough:
+    desc: ''
+    value: 'is_Ia * p_daily_cough'
+  coughdpi:
+    desc: 'onset of coughing in days post infection'
+    value: triangular(4, 12, 31)
+  stop_signs:
+    desc: 'dpi at which the clinical signs will end'
+    value: random_uniform(27,91)
+
+  # -----------------
+  # PNEUMONIA
+  # -----------------
+  proportion_pneumonia:
+    desc: ''
+    value: 'IfThenElse(is_Treated, random_uniform(0.9,0.95)*ReductABlesion, random_uniform(0.9,0.95))'
+  p_daily_pneumonia:
+    desc: ''
+    value: '1 - (1 - proportion_pneumonia)**(1 / 7)'
+  p_pneumonia:
+    desc: ''
+    value: 'is_Ia * p_daily_pneumonia'
+  #pneumonia_decay:
+  #  desc: 'after an initial duration between 8 and 9 weeks, pneumonia resolves within 4 weeks (exponential decay)'
+  #  value: 1/random_uniform(0,28) #'IfThenElse(is_Treated, 1 / (4 * 7)/2, 1 / (4 * 7))'
+ # rate_resolvinglesions:
+ #   desc: 'recovered lesions showing scars (exponential decay)'
+ #   value: 1/random_uniform(14,28) #'IfThenElse(is_Treated, 1 / (4 * 7)/2, 1 / (4 * 7))'
+
+  max_dur_pneumonia:
+    desc: ''
+    value: '105'
+  min_dur_pneumonia:
+    desc: ''
+    value: '56'
+  dur_pneumonia:
+    desc: 'pneumonia lasts between 8 and 15 weeks'
+    value: 'random_uniform(min_dur_pneumonia, max_dur_pneumonia)'
+  #p_scars:
+  #  desc: 'proportion of pigs developing scars'
+  #  value: 0.75
+  #  source: 'assumption, verify with ceva data'
+
+  # -----------------
+  # PRODUCTION
+  # -----------------
+  target_weight:
+    desc: ''
+    value: '120'
+  target_weight_reached:
+    desc: ''
+    value: 'weight >= target_weight'
+  mean_entry_weight:
+    desc: ''
+    value: '25'
+  sd_entry_weight:
+    desc: ''
+    value: '2'
+  entry_weight:
+    desc: ''
+    value: 'random_normal(mean_entry_weight, sd_entry_weight)'
+  entry_age:
+    desc: ''
+    value: 'random_normal(76,5)'
+
+
+  daily_increase:
+    desc: ''
+    value: 'random_normal(average_daily_gain, sd_daily_increase)'
+  average_daily_gain:
+    desc: ''
+    value: '0.923'
+  sd_daily_increase:
+    desc: ''
+    value: '0.025' #'0.085'
+  disease_impact_ADG: #AB
+    desc: 'impact factor of being in state Ia or Ic on ADG'
+    value: 'IfThenElse(is_Treated, random_uniform(0.83, 1)*ReductABproduction, random_uniform(0.83, 1))'
+
+  FCR:
+    desc: 'feed conversion ratio healthy pigs'
+    value: 'random_normal(mean_FCR, sd_FCR)'
+  mean_FCR:
+    desc: 'average feed conversion ratio'
+    value: '2.51'
+    source: ''
+  sd_FCR:
+    desc: ''
+    value: 0.13
+    source: ''
+  disease_impact_FCR: #AB
+    desc: 'impact factor of being in state Ia or Ic on FCR'
+    value: 'IfThenElse(is_Treated, random_uniform(1, 1.14)*ReductABproduction, random_uniform(1, 1.14))'
+
+  Selling14:
+    desc: 'first selling of top pigs after 14 weeks'
+    value: AND(total_Ready >= 0.20*room_capacity, time >= 98, time <= 100)
+  Selling16:
+    desc: 'selling of pigs after 16 weeks'
+    value: AND(time >= 112, time <= 114)
+  Selling18:
+    desc: 'selling of late pigs'
+    value: time >= 126
+
+  # -----------------
+  # ANTIBIOTIC TREATMENT
+  # -----------------
+
+  Treatmentthreshold:
+    desc: 'fraction pigs that have to be seen coughing before treatment starts (KNMvD)'
+    value: 0.10
+  Pcoughdetect:
+    desc: 'Probability of coughing animals actually detected'
+    value: random_uniform(0.5,0.75)
+  AntibioticTreatment:
+    desc: 'condition to treat'
+    value: 'GreaterThan(Pcoughdetect * total_C, Treatmentthreshold* room_capacity)'
+  ReductABcough:
+    desc: 'reduction of dur of cough in case of AB treatment'
+    value: 'random_uniform(0.5,0.75)'
+    source: 'Roberts et al.,2011'
+  ReductABlesion:
+    desc: 'reduction of proba lesions in case of AB treatment'
+    value: 'random_uniform(0.5,0.75)'
+    source: 'Roberts et al., 2011 & Stipkovits et al., 2003'
+  ReductABproduction:
+    desc: 'reduction of impact on production performance in case of AB treatment'
+    value: 'random_uniform(0.95,1)'
+    source: 'Burch, 1984;Nanjiani et al., 2005; Ross & Cox, 1988'
+
+  # -----------------
+  # INITIAL_CONDITIONS
+  # -----------------
+  use_vaccination:
+    desc: '0 or 1 to control vaccinal status of all animals'
+    value: '0'
+  room_capacity:
+    desc: 'room consisting of 12 pens'
+    value: '144'
+  initial_prevalence:
+    desc: ''
+    value: 'triangular(0.016,0.109,0.155)'
+    source: 'Vangroenweghe et al. (2015)'
+  nb_infectedpigs:
+    desc: 'initial number of healthy pigs'
+    value: 53 #16 #'room_capacity*initial_prevalence'
+  nb_healthypigs:
+    desc: 'initial number of healthy pigs'
+    value: 91 #128 #'room_capacity-nb_infectedpigs'
+
+  # -----------------
+  # BURDENS
+  # -----------------
+  Feedcosts:
+    desc: ''
+    value: 'sumfeedintake*0.3267'
+  Revenues:
+    desc: ''
+    value: 'sumweight*1.98'
+  Treatmentcosts:
+    desc: 'total weight * 16mL/kg BW * price of 20 euros/L'
+    value: 'totaltreatedweight*0.016*5*20'
+  Dosage:
+    desc: 'total weight *20 mg/kg BW * tiamulin contents'
+    value: 'totaltreatedweight*0.02*5*0.1012'
+
+#   _____ _        _
+#  / ____| |      | |
+# | (___ | |_ __ _| |_ _____   ____ _ _ __ ___
+#  \___ \| __/ _` | __/ _ \ \ / / _` | '__/ __|
+#  ____) | || (_| | ||  __/\ V / (_| | |  \__ \
+# |_____/ \__\__,_|\__\___| \_/ \__,_|_|  |___/
+
+statevars:
+  # -----------------
+  # PRODUCTION
+  # -----------------
+  weight:
+    desc: 'the individual weight of pigs'
+  feed_intake:
+    desc: 'the individual feed intake of pigs'
+  Age:
+    desc: 'the age  of the pig'
+  DPI:
+    desc: 'days post infection'
+  dayscoughing:
+    desc: 'days that animals have been coughing'
+  Days_diseased:
+    desc: ''
+  nb_AntibioticTreatment:
+    desc: 'number of AB treatments an animal has had'
+  treatmentday:
+    desc: 'day on which treatment was administered'
+  treatedweight:
+    desc: 'kilograms present at time of treatment'
+
+#  _____           _        _
+# |  __ \         | |      | |
+# | |__) | __ ___ | |_ ___ | |_ _   _ _ __   ___  ___
+# |  ___/ '__/ _ \| __/ _ \| __| | | | '_ \ / _ \/ __|
+# | |   | | | (_) | || (_) | |_| |_| | |_) |  __/\__ \
+# |_|   |_|  \___/ \__\___/ \__|\__, | .__/ \___||___/
+#                                __/ | |
+#                               |___/|_|
+
+prototypes:
+  animals:
+    - default_pig:
+        desc: 'default initial values for pigs'
+        Pneumonia: 'NL'
+        ABtreatment: 'Untreated'
+        Vaccine: 'random(use_vaccination, 1-use_vaccination)'
+        #        Mortality: 'Alive'
+        Performance: Incoming
+        weight: 'entry_weight'
+        feed_intake: '0'
+        DPI: 0
+        Age: 'entry_age'
+        dayscoughing: 0
+        Days_diseased: 0
+        nb_episodes: 0
+        nb_AntibioticTreatment: 0
+        treatedweight: 0
+    - healthy_pig:
+        desc: 'susceptible pig'
+        health_state: 'S'
+        Clinical_state: 'H'
+        DPI: '0'
+        organization: [housing]
+ #       init_location:
+ #         housing: 'waitingroom'
+    - infected_pig:
+        desc: 'infected'
+        health_state: 'random(0, p_init_E, p_init_Ia, 0, 0)'
+        Clinical_state: 'SC'
+        DPI: 'IfThenElse(is_E, random_uniform(0,7), random_uniform(3,42))'
+        organization: [housing]
+ #       init_location:
+ #         housing: 'waitingroom'
+
+#  _____       _ _   _       _
+# |_   _|     (_) | (_)     | |
+#   | |  _ __  _| |_ _  __ _| |
+#   | | | '_ \| | __| |/ _` | |
+#  _| |_| | | | | |_| | (_| | |
+# |_____|_| |_|_|\__|_|\__,_|_|
+
+#                      _ _ _   _
+#                     | (_) | (_)
+#   ___ ___  _ __   __| |_| |_ _  ___  _ __  ___
+#  / __/ _ \| '_ \ / _` | | __| |/ _ \| '_ \/ __|
+# | (_| (_) | | | | (_| | | |_| | (_) | | | \__ \
+#  \___\___/|_| |_|\__,_|_|\__|_|\___/|_| |_|___/
+
+initial_conditions:
+  population:
+    - prototype: [healthy_pig]
+      amount: 'nb_healthypigs'
+    - prototype: [infected_pig]
+      amount: 'nb_infectedpigs'
+
+
+#   ____        _               _
+#  / __ \      | |             | |
+# | |  | |_   _| |_ _ __  _   _| |_ ___
+# | |  | | | | | __| '_ \| | | | __/ __|
+# | |__| | |_| | |_| |_) | |_| | |_\__ \
+#  \____/ \__,_|\__| .__/ \__,_|\__|___/
+#                  | |
+#                  |_|
+
+outputs:
+  type: csv
+  population:
+    period: 1
+    extra_vars:
+      - fatt1_pen1_S
+      #- fatt1_pen1_Se
+      - fatt1_pen1_E
+      - fatt1_pen1_Ia
+      - fatt1_pen1_Ic
+      - fatt1_pen1_RI
+      - fatt1_pen2_S
+      #- fatt1_pen2_Se
+      - fatt1_pen2_E
+      - fatt1_pen2_Ia
+      - fatt1_pen2_Ic
+      - fatt1_pen2_RI
+      - fatt1_pen3_S
+     # - fatt1_pen3_Se
+      - fatt1_pen3_E
+      - fatt1_pen3_Ia
+      - fatt1_pen3_Ic
+      - fatt1_pen3_RI
+      - fatt1_pen4_S
+     # - fatt1_pen4_Se
+      - fatt1_pen4_E
+      - fatt1_pen4_Ia
+      - fatt1_pen4_Ic
+      - fatt1_pen4_RI
+      - fatt1_pen5_S
+     # - fatt1_pen5_Se
+      - fatt1_pen5_E
+      - fatt1_pen5_Ia
+      - fatt1_pen5_Ic
+      - fatt1_pen5_RI
+      - fatt1_pen6_S
+      #- fatt1_pen6_Se
+      - fatt1_pen6_E
+      - fatt1_pen6_Ia
+      - fatt1_pen6_Ic
+      - fatt1_pen6_RI
+      - fatt1_pen7_S
+      #- fatt1_pen7_Se
+      - fatt1_pen7_E
+      - fatt1_pen7_Ia
+      - fatt1_pen7_Ic
+      - fatt1_pen7_RI
+      - fatt1_pen8_S
+      #- fatt1_pen8_Se
+      - fatt1_pen8_E
+      - fatt1_pen8_Ia
+      - fatt1_pen8_Ic
+      - fatt1_pen8_RI
+      - fatt1_pen9_S
+      #- fatt1_pen9_Se
+      - fatt1_pen9_E
+      - fatt1_pen9_Ia
+      - fatt1_pen9_Ic
+      - fatt1_pen9_RI
+      - fatt1_pen10_S
+      #- fatt1_pen10_Se
+      - fatt1_pen10_E
+      - fatt1_pen10_Ia
+      - fatt1_pen10_Ic
+      - fatt1_pen10_RI
+      - fatt1_pen11_S
+     # - fatt1_pen11_Se
+      - fatt1_pen11_E
+      - fatt1_pen11_Ia
+      - fatt1_pen11_Ic
+      - fatt1_pen11_RI
+      - fatt1_pen12_S
+     # - fatt1_pen12_Se
+      - fatt1_pen12_E
+      - fatt1_pen12_Ia
+      - fatt1_pen12_Ic
+      - fatt1_pen12_RI
+      - sumweight
+      - varweight
+      - Revenues
+      - sumfeedintake
+      - Feedcosts
+      - Dosage
+      - Treatmentcosts
+
+
+...
